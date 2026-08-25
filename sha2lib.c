@@ -11,15 +11,15 @@
 *   where each bit is the exclusive-or of the corresponding bits in s1-s2.
 */
 static int ex_or (lua_State *L) {
-  size_t l1, l2;
-  const char *s1 = luaL_checklstring(L, 1, &l1);
-  const char *s2 = luaL_checklstring(L, 2, &l2);
-  luaL_Buffer b;
-  luaL_argcheck( L, l1 == l2, 2, "lengths must be equal" );
-  luaL_buffinit(L, &b);
-  while (l1--) luaL_putchar(&b, (*s1++)^(*s2++));
-  luaL_pushresult(&b);
-  return 1;
+	size_t l1, l2;
+	const char *s1 = luaL_checklstring(L, 1, &l1);
+	const char *s2 = luaL_checklstring(L, 2, &l2);
+	luaL_Buffer b;
+	luaL_argcheck( L, l1 == l2, 2, "lengths must be equal" );
+	luaL_buffinit(L, &b);
+	while (l1--) luaL_addchar(&b, (*s1++)^(*s2++));
+	luaL_pushresult(&b);
+	return 1;
 }
 
 /**
@@ -31,13 +31,13 @@ static int sha256(lua_State *L) {
 	const char *data = luaL_checklstring(L, 1, &len);
 
 	SHA256_CTX context;
-	char digest[SHA256_DIGEST_LENGTH];
+	uint8_t digest[SHA256_DIGEST_LENGTH];
 
 	SHA256_Init(&context);
-	SHA256_Update(&context, data, len);
+	SHA256_Update(&context, (const uint8_t*)data, len);
 	SHA256_Final(digest, &context);
 
-	lua_pushlstring(L, digest, SHA256_DIGEST_LENGTH);
+	lua_pushlstring(L, (const char*)digest, SHA256_DIGEST_LENGTH);
 	return 1;
 }
 
@@ -50,7 +50,7 @@ static int sha256hex(lua_State *L) {
 	const char *data = luaL_checklstring(L, 1, &len);
 
 	char digest[SHA256_DIGEST_STRING_LENGTH];
-	SHA256_Data(data, len, digest);
+	SHA256_Data((const uint8_t*)data, len, digest);
 	lua_pushlstring(L, digest, SHA256_DIGEST_STRING_LENGTH - 1);
 	return 1;
 }
@@ -64,13 +64,13 @@ static int sha384(lua_State *L) {
 	const char *data = luaL_checklstring(L, 1, &len);
 
 	SHA384_CTX context;
-	char digest[SHA384_DIGEST_LENGTH];
+	uint8_t digest[SHA384_DIGEST_LENGTH];
 
 	SHA384_Init(&context);
-	SHA384_Update(&context, data, len);
+	SHA384_Update(&context, (const uint8_t*)data, len);
 	SHA384_Final(digest, &context);
 
-	lua_pushlstring(L, digest, SHA384_DIGEST_LENGTH);
+	lua_pushlstring(L, (const char*)digest, SHA384_DIGEST_LENGTH);
 	return 1;
 }
 
@@ -83,7 +83,7 @@ static int sha384hex(lua_State *L) {
 	const char *data = luaL_checklstring(L, 1, &len);
 
 	char digest[SHA384_DIGEST_STRING_LENGTH];
-	SHA384_Data(data, len, digest);
+	SHA384_Data((const uint8_t*)data, len, digest);
 	lua_pushlstring(L, digest, SHA384_DIGEST_STRING_LENGTH - 1);
 	return 1;
 }
@@ -97,13 +97,13 @@ static int sha512(lua_State *L) {
 	const char *data = luaL_checklstring(L, 1, &len);
 
 	SHA512_CTX context;
-	char digest[SHA512_DIGEST_LENGTH];
+	uint8_t digest[SHA512_DIGEST_LENGTH];
 
 	SHA512_Init(&context);
-	SHA512_Update(&context, data, len);
+	SHA512_Update(&context, (const uint8_t*)data, len);
 	SHA512_Final(digest, &context);
 
-	lua_pushlstring(L, digest, SHA512_DIGEST_LENGTH);
+	lua_pushlstring(L, (const char*)digest, SHA512_DIGEST_LENGTH);
 	return 1;
 }
 
@@ -116,21 +116,23 @@ static int sha512hex(lua_State *L) {
 	const char *data = luaL_checklstring(L, 1, &len);
 
 	char digest[SHA512_DIGEST_STRING_LENGTH];
-	SHA512_Data(data, len, digest);
+	SHA512_Data((const uint8_t*)data, len, digest);
 	lua_pushlstring(L, digest, SHA512_DIGEST_STRING_LENGTH - 1);
 	return 1;
 }
 
-/*
-** Assumes the table is on top of the stack.
-*/
 static void set_info (lua_State *L) {
 	lua_pushliteral (L, "_VERSION");
-	lua_pushliteral (L, "sha2 0.1.0");
+	lua_pushliteral (L, "sha2 0.2.1");
 	lua_settable (L, -3);
 }
 
-static struct luaL_reg reg[] = {
+typedef struct {
+	const char *name;
+	lua_CFunction func;
+} sha2_reg;
+
+static const sha2_reg reg[] = {
 	{"exor", ex_or},
 	{"sha256", sha256},
 	{"sha256hex", sha256hex},
@@ -142,8 +144,18 @@ static struct luaL_reg reg[] = {
 };
 
 int luaopen_sha2(lua_State *L) {
-	luaL_openlib(L, "sha2", reg, 0);
+	int i, n = 0;
+	while (reg[n].name) n++;
+	lua_createtable(L, 0, n);
+	for (i = 0; i < n; i++) {
+		lua_pushstring(L, reg[i].name);
+		lua_pushcfunction(L, reg[i].func);
+		lua_rawset(L, -3);
+	}
 	set_info (L);
+#if LUA_VERSION_NUM < 502
+	lua_pushvalue(L, -1);
+	lua_setglobal(L, "sha2");
+#endif
 	return 1;
 }
-

@@ -1,0 +1,125 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: lua ${{ matrix.luaVersion }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        luaVersion: ['5.1', '5.2', '5.3', '5.4', '5.5', 'luajit', 'luajit-openresty']
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Lua ${{ matrix.luaVersion }}
+        uses: leafo/gh-actions-lua@v13
+        with:
+          luaVersion: ${{ matrix.luaVersion }}
+
+      - name: Install LuaRocks
+        uses: leafo/gh-actions-luarocks@v6
+
+      - name: Install md5 rock
+        run: luarocks install md5
+
+      - name: Build rock
+        run: luarocks make
+
+      - name: Run tests via run_tests.lua
+        run: |
+          eval "$(luarocks path --no-bin)"
+          lua run_tests.lua
+
+      - name: Run tests via luarocks test
+        run: luarocks test
+
+  macos:
+    name: macos lua 5.5
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Lua 5.5
+        uses: leafo/gh-actions-lua@v13
+        with:
+          luaVersion: '5.5'
+
+      - name: Install LuaRocks
+        uses: leafo/gh-actions-luarocks@v6
+
+      - name: Install md5 rock
+        run: luarocks install md5
+
+      - name: Build rock
+        run: luarocks make
+
+      - name: Run tests via run_tests.lua
+        run: |
+          eval "$(luarocks path --no-bin)"
+          lua run_tests.lua
+
+      - name: Run tests via luarocks test
+        run: luarocks test
+
+  windows:
+    name: windows lua 5.5
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      LR_BIN: luarocks-bin/luarocks-3.13.0-windows-64
+      LUA_SRC: lua-5.5.0/src
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build Lua 5.5 from source (MinGW)
+        run: |
+          curl -sL https://www.lua.org/ftp/lua-5.5.0.tar.gz -o lua.tar.gz
+          tar xzf lua.tar.gz
+          MAKE_BIN=$(command -v make || command -v mingw32-make)
+          "$MAKE_BIN" -C lua-5.5.0 mingw
+
+      - name: Install LuaRocks and build the rock
+        run: |
+          curl -sL https://luarocks.github.io/luarocks/releases/luarocks-3.13.0-windows-64.zip -o lr.zip
+          mkdir luarocks-bin
+          powershell -NoProfile -Command "Expand-Archive -Path lr.zip -DestinationPath luarocks-bin"
+          export PATH="$PWD/$LR_BIN:$PWD/$LUA_SRC:$PATH"
+          luarocks config variables.LUA_INCDIR "lua-5.5.0/src"
+          luarocks config variables.LUA_LIBDIR "lua-5.5.0/src"
+          luarocks config variables.CC gcc
+          luarocks config variables.LD gcc
+          luarocks --lua-version=5.5 --tree lrtree make
+          luarocks --lua-version=5.5 --tree lrtree install md5
+
+      - name: Run tests via run_tests.lua
+        run: |
+          export PATH="$PWD/$LUA_SRC:$PATH"
+          export LUA_PATH='./lrtree/share/lua/5.5/?.lua;./lrtree/share/lua/5.5/?/init.lua;;'
+          export LUA_CPATH='./lrtree/lib/lua/5.5/?.dll;;'
+          lua run_tests.lua
+
+      - name: Run tests via luarocks test
+        run: |
+          export PATH="$PWD/$LR_BIN:$PWD/$LUA_SRC:$PATH"
+          luarocks --lua-version=5.5 --tree lrtree test
+
+  warnings:
+    name: gcc -Wall -Wextra -Wpedantic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Lua headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblua5.4-dev
+
+      - name: Compile with strict warnings
+        run: gcc -O2 -Wall -Wextra -Wpedantic -c -I/usr/include/lua5.4 -I. sha2.c sha2lib.c

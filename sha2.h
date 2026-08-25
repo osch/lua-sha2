@@ -1,7 +1,7 @@
 /*
  * FILE:	sha2.h
  * AUTHOR:	Aaron D. Gifford - http://www.aarongifford.com/
- * 
+ *
  * Copyright (c) 2000-2001, Aaron D. Gifford
  * All rights reserved.
  *
@@ -16,7 +16,7 @@
  * 3. Neither the name of the copyright holder nor the names of contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTOR(S) ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -28,8 +28,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $Id: sha2.h,v 1.1 2001/11/08 00:02:01 adg Exp adg $
  */
 
 #ifndef __SHA2_H__
@@ -39,20 +37,50 @@
 extern "C" {
 #endif
 
+#include <sys/types.h>
+#include <stdint.h>
 
 /*
- * Import u_intXX_t size_t type definitions from system headers.  You
- * may need to change this, or define these things yourself in this
- * file.
+ * Byte order detection. BYTE_ORDER/LITTLE_ENDIAN/BIG_ENDIAN may come from
+ * the platform headers; otherwise derive them from compiler built-ins or
+ * well-known architecture macros. To override, define all three macros
+ * yourself before including this file.
  */
-#include <sys/types.h>
+#if !defined(BYTE_ORDER) || !defined(LITTLE_ENDIAN) || !defined(BIG_ENDIAN)
 
-#ifdef SHA2_USE_INTTYPES_H
+#undef BYTE_ORDER
+#undef LITTLE_ENDIAN
+#undef BIG_ENDIAN
+#define LITTLE_ENDIAN	1234
+#define BIG_ENDIAN	4321
 
-#include <inttypes.h>
+#if defined(__BYTE_ORDER__)
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define BYTE_ORDER	LITTLE_ENDIAN
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define BYTE_ORDER	BIG_ENDIAN
+#endif
+#endif /* defined(__BYTE_ORDER__) */
 
-#endif /* SHA2_USE_INTTYPES_H */
+#if !defined(BYTE_ORDER)
+#if defined(_WIN32) || defined(__i386__) || defined(__x86_64__) || \
+    defined(__ARMEL__) || defined(__THUMBEL__) || defined(__AARCH64EL__) || \
+    defined(__MIPSEL) || defined(__MIPSEL__) || defined(_MIPSEL) || \
+    defined(__loongarch__) || defined(__riscv) || defined(__alpha__)
+#define BYTE_ORDER	LITTLE_ENDIAN
+#elif defined(__ARMEB__) || defined(__THUMBEB__) || defined(__AARCH64EB__) || \
+    defined(__MIPSEB) || defined(__MIPSEB__) || defined(_MIPSEB) || \
+    defined(__sparc__) || defined(__sparc) || defined(__hppa__) || \
+    defined(__hppa) || defined(__powerpc__) || defined(__ppc__) || \
+    defined(__PPC__) || defined(__s390__) || defined(__s390x__) || \
+    defined(__m68k__)
+#define BYTE_ORDER	BIG_ENDIAN
+#else
+#error Unable to determine byte order; please define BYTE_ORDER, LITTLE_ENDIAN and BIG_ENDIAN.
+#endif
+#endif /* !defined(BYTE_ORDER) */
 
+#endif /* byte order macros */
 
 /*** SHA-256/384/512 Various Length Definitions ***********************/
 #define SHA256_BLOCK_LENGTH		64
@@ -67,66 +95,21 @@ extern "C" {
 
 
 /*** SHA-256/384/512 Context Structures *******************************/
-/* NOTE: If your architecture does not define either u_intXX_t types or
- * uintXX_t (from inttypes.h), you may need to define things by hand
- * for your system:
- */
-#if 0
-typedef unsigned char u_int8_t;		/* 1-byte  (8-bits)  */
-typedef unsigned int u_int32_t;		/* 4-bytes (32-bits) */
-typedef unsigned long long u_int64_t;	/* 8-bytes (64-bits) */
-#endif
-/*
- * Most BSD systems already define u_intXX_t types, as does Linux.
- * Some systems, however, like Compaq's Tru64 Unix instead can use
- * uintXX_t types defined by very recent ANSI C standards and included
- * in the file:
- *
- *   #include <inttypes.h>
- *
- * If you choose to use <inttypes.h> then please define: 
- *
- *   #define SHA2_USE_INTTYPES_H
- *
- * Or on the command line during compile:
- *
- *   cc -DSHA2_USE_INTTYPES_H ...
- */
-#ifdef SHA2_USE_INTTYPES_H
-
 typedef struct _SHA256_CTX {
 	uint32_t	state[8];
 	uint64_t	bitcount;
-	uint8_t	buffer[SHA256_BLOCK_LENGTH];
+	uint8_t		buffer[SHA256_BLOCK_LENGTH];
 } SHA256_CTX;
 typedef struct _SHA512_CTX {
 	uint64_t	state[8];
 	uint64_t	bitcount[2];
-	uint8_t	buffer[SHA512_BLOCK_LENGTH];
+	uint8_t		buffer[SHA512_BLOCK_LENGTH];
 } SHA512_CTX;
-
-#else /* SHA2_USE_INTTYPES_H */
-
-typedef struct _SHA256_CTX {
-	u_int32_t	state[8];
-	u_int64_t	bitcount;
-	u_int8_t	buffer[SHA256_BLOCK_LENGTH];
-} SHA256_CTX;
-typedef struct _SHA512_CTX {
-	u_int64_t	state[8];
-	u_int64_t	bitcount[2];
-	u_int8_t	buffer[SHA512_BLOCK_LENGTH];
-} SHA512_CTX;
-
-#endif /* SHA2_USE_INTTYPES_H */
 
 typedef SHA512_CTX SHA384_CTX;
 
 
 /*** SHA-256/384/512 Function Prototypes ******************************/
-#ifndef NOPROTO
-#ifdef SHA2_USE_INTTYPES_H
-
 void SHA256_Init(SHA256_CTX *);
 void SHA256_Update(SHA256_CTX*, const uint8_t*, size_t);
 void SHA256_Final(uint8_t[SHA256_DIGEST_LENGTH], SHA256_CTX*);
@@ -145,53 +128,8 @@ void SHA512_Final(uint8_t[SHA512_DIGEST_LENGTH], SHA512_CTX*);
 char* SHA512_End(SHA512_CTX*, char[SHA512_DIGEST_STRING_LENGTH]);
 char* SHA512_Data(const uint8_t*, size_t, char[SHA512_DIGEST_STRING_LENGTH]);
 
-#else /* SHA2_USE_INTTYPES_H */
-
-void SHA256_Init(SHA256_CTX *);
-void SHA256_Update(SHA256_CTX*, const u_int8_t*, size_t);
-void SHA256_Final(u_int8_t[SHA256_DIGEST_LENGTH], SHA256_CTX*);
-char* SHA256_End(SHA256_CTX*, char[SHA256_DIGEST_STRING_LENGTH]);
-char* SHA256_Data(const u_int8_t*, size_t, char[SHA256_DIGEST_STRING_LENGTH]);
-
-void SHA384_Init(SHA384_CTX*);
-void SHA384_Update(SHA384_CTX*, const u_int8_t*, size_t);
-void SHA384_Final(u_int8_t[SHA384_DIGEST_LENGTH], SHA384_CTX*);
-char* SHA384_End(SHA384_CTX*, char[SHA384_DIGEST_STRING_LENGTH]);
-char* SHA384_Data(const u_int8_t*, size_t, char[SHA384_DIGEST_STRING_LENGTH]);
-
-void SHA512_Init(SHA512_CTX*);
-void SHA512_Update(SHA512_CTX*, const u_int8_t*, size_t);
-void SHA512_Final(u_int8_t[SHA512_DIGEST_LENGTH], SHA512_CTX*);
-char* SHA512_End(SHA512_CTX*, char[SHA512_DIGEST_STRING_LENGTH]);
-char* SHA512_Data(const u_int8_t*, size_t, char[SHA512_DIGEST_STRING_LENGTH]);
-
-#endif /* SHA2_USE_INTTYPES_H */
-
-#else /* NOPROTO */
-
-void SHA256_Init();
-void SHA256_Update();
-void SHA256_Final();
-char* SHA256_End();
-char* SHA256_Data();
-
-void SHA384_Init();
-void SHA384_Update();
-void SHA384_Final();
-char* SHA384_End();
-char* SHA384_Data();
-
-void SHA512_Init();
-void SHA512_Update();
-void SHA512_Final();
-char* SHA512_End();
-char* SHA512_Data();
-
-#endif /* NOPROTO */
-
 #ifdef	__cplusplus
 }
 #endif /* __cplusplus */
 
 #endif /* __SHA2_H__ */
-
