@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# the carray tests must run in CI: fail instead of skipping them
+env:
+  SHA2_TEST_REQUIRE_CARRAY: '1'
+
 jobs:
   test:
     name: lua ${{ matrix.luaVersion }}
@@ -24,11 +28,13 @@ jobs:
       - name: Install LuaRocks
         uses: leafo/gh-actions-luarocks@v6
 
-      - name: Install md5 rock
-        run: luarocks install md5
+      - name: Install md5 and carray rocks
+        run: |
+          luarocks install md5
+          luarocks install carray
 
       - name: Build rock
-        run: luarocks make
+        run: luarocks make rockspecs/sha2-scm-0.rockspec
 
       - name: Run tests via run_tests.lua
         run: |
@@ -36,7 +42,7 @@ jobs:
           lua run_tests.lua
 
       - name: Run tests via luarocks test
-        run: luarocks test
+        run: luarocks test rockspecs/sha2-scm-0.rockspec
 
   macos:
     name: macos lua 5.5
@@ -52,11 +58,13 @@ jobs:
       - name: Install LuaRocks
         uses: leafo/gh-actions-luarocks@v6
 
-      - name: Install md5 rock
-        run: luarocks install md5
+      - name: Install md5 and carray rocks
+        run: |
+          luarocks install md5
+          luarocks install carray
 
       - name: Build rock
-        run: luarocks make
+        run: luarocks make rockspecs/sha2-scm-0.rockspec
 
       - name: Run tests via run_tests.lua
         run: |
@@ -64,10 +72,52 @@ jobs:
           lua run_tests.lua
 
       - name: Run tests via luarocks test
-        run: luarocks test
+        run: luarocks test rockspecs/sha2-scm-0.rockspec
 
   windows:
-    name: windows lua 5.5
+    name: windows lua 5.5 (MSVC)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Remove conflicting Git link.exe
+        # Git for Windows ships a coreutils "link" (hardlink tool) in usr/bin
+        # that shadows MSVC's link.exe under the bash shell used below.
+        run: rm -f "/usr/bin/link.exe"
+
+      - name: Install Lua 5.5
+        uses: luarocks/gh-actions-lua@v14
+        with:
+          luaVersion: '5.5'
+
+      - name: Install LuaRocks
+        uses: luarocks/gh-actions-luarocks@v7
+
+      - name: Install md5 and carray rocks
+        run: |
+          luarocks install md5
+          luarocks install carray
+
+      - name: Build rock
+        run: luarocks make rockspecs/sha2-scm-0.rockspec
+
+      - name: Run tests via run_tests.lua
+        # (gh-actions-luarocks already puts the rock tree on LUA_PATH/CPATH;
+        #  `luarocks path` would print cmd.exe syntax here)
+        run: lua run_tests.lua
+
+      - name: Run tests via luarocks test
+        run: luarocks test rockspecs/sha2-scm-0.rockspec
+
+  # Windows with MinGW gcc in addition to MSVC above: gcc (14+) rejects
+  # constructs that MSVC only warns about (e.g. implicit declarations).
+  windows-mingw:
+    name: windows lua 5.5 (MinGW)
     runs-on: windows-latest
     defaults:
       run:
@@ -80,6 +130,7 @@ jobs:
 
       - name: Build Lua 5.5 from source (MinGW)
         run: |
+          gcc --version | head -1
           curl -sL https://www.lua.org/ftp/lua-5.5.0.tar.gz -o lua.tar.gz
           tar xzf lua.tar.gz
           MAKE_BIN=$(command -v make || command -v mingw32-make)
@@ -95,8 +146,11 @@ jobs:
           luarocks config variables.LUA_LIBDIR "lua-5.5.0/src"
           luarocks config variables.CC gcc
           luarocks config variables.LD gcc
-          luarocks --lua-version=5.5 --tree lrtree make
+          luarocks --lua-version=5.5 --tree lrtree make rockspecs/sha2-scm-0.rockspec
           luarocks --lua-version=5.5 --tree lrtree install md5
+          # carray from its scm rockspec (GitHub master): the released carray
+          # does not build with MinGW gcc 14 yet (missing <io.h> for read())
+          luarocks --lua-version=5.5 --tree lrtree install https://luarocks.org/manifests/osch/carray-scm-0.rockspec
 
       - name: Run tests via run_tests.lua
         run: |
@@ -108,7 +162,9 @@ jobs:
       - name: Run tests via luarocks test
         run: |
           export PATH="$PWD/$LR_BIN:$PWD/$LUA_SRC:$PATH"
-          luarocks --lua-version=5.5 --tree lrtree test
+          export LUA_PATH='./lrtree/share/lua/5.5/?.lua;./lrtree/share/lua/5.5/?/init.lua;;'
+          export LUA_CPATH='./lrtree/lib/lua/5.5/?.dll;;'
+          luarocks --lua-version=5.5 --tree lrtree test rockspecs/sha2-scm-0.rockspec
 
   warnings:
     name: gcc -Wall -Wextra -Wpedantic
@@ -122,4 +178,4 @@ jobs:
           sudo apt-get install -y liblua5.4-dev
 
       - name: Compile with strict warnings
-        run: gcc -O2 -Wall -Wextra -Wpedantic -c -I/usr/include/lua5.4 -I. sha2.c sha2lib.c
+        run: gcc -O2 -Wall -Wextra -Wpedantic -DSHA2_VERSION=scm -c -I/usr/include/lua5.4 -I. sha2.c sha2lib.c
